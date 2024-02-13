@@ -1,0 +1,70 @@
+# see https://semantic-release.gitbook.io/semantic-release/recipes/ci-configurations/github-actions
+
+# The parent job needs to call this workflow with at least the following
+# permissions:
+#   contents: write # to be able to publish a GitHub release
+#   issues: write # to be able to comment on released issues
+#   pull-requests: write # to be able to comment on released pull requests
+#   id-token: write # to enable use of OIDC for npm provenance
+
+# The parent job needs to call this workflow with the following
+# secrets:
+#   NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+name: Release (reusable workflow)
+
+on:
+  workflow_call:
+    secrets:
+      NPM_TOKEN:
+        description: 'Token to publish to npm'
+        required: true
+
+permissions:
+  contents: read # for checkout
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to be able to publish a GitHub release
+      issues: write # to be able to comment on released issues
+      pull-requests: write # to be able to comment on released pull requests
+      id-token: write # to enable use of OIDC for npm provenance
+
+    steps:
+      - name: 🔐 Harden Runner
+        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+        with:
+          disable-sudo: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            fulcio.sigstore.dev:443
+            github.com:443
+            registry.npmjs.org:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+
+      - name: ⚙️ Git Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@b39b52d1213e96004bfcb1c61a8a6fa8ab84f3e8 # v4.0.1
+        with:
+          node-version: 20
+
+      - name: ⚙️ Install dependencies
+        run: npm clean-install
+
+      - name: 🔎 Verify the integrity of provenance attestations and registry signatures for installed dependencies
+        run: npm audit signatures
+
+      - name: 🚀 Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npx semantic-release
